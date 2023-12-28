@@ -13,3 +13,13 @@ export function getComments(postId, options) {
     .get(`/posts/${postId}/comments`, options)
     .then((res) => res.data);
 }
+
+export function newPost(postData, options) {
+  return baseApi.post(`/posts`, postData, options).then((res) => res.data);
+}
+
+export function updatePost(postId, postData, options) {
+  return baseApi
+    .put(`/posts/${postId}`, postData, options)
+    .then((res) => res.data);
+}

@@ -1,4 +1,4 @@
-import { Navigate, createBrowserRouter } from "react-router-dom";
+import { Navigate, createBrowserRouter, redirect } from "react-router-dom";
 import RootLayout from "./layouts/RootLayout";
 import PostList from "./pages/PostList";
 import Post from "./pages/Post";
@@ -6,9 +6,18 @@ import UserList from "./pages/UserList";
 import User from "./pages/User";
 import TodoList from "./pages/TodoList";
 import ErrorPage from "./pages/ErrorPage";
-import { getComments, getPost, getPosts } from "./api/post";
+import {
+  getComments,
+  getPost,
+  getPosts,
+  newPost,
+  updatePost,
+} from "./api/post";
 import { getUser, getUsers } from "./api/users";
 import { getTodos } from "./api/todos";
+import NewPost from "./pages/NewPost";
+import EditPost from "./pages/EditPost";
+import { postFormValidator } from "./component/PostForm";
 
 export const router = createBrowserRouter([
   {
@@ -26,19 +35,117 @@ export const router = createBrowserRouter([
               {
                 index: true,
                 element: <PostList />,
-                loader: ({ request: { signal } }) => {
-                  return getPosts(signal);
+                loader: async ({ request: { signal, url } }) => {
+                  const searchParams = new URL(url).searchParams;
+                  const query = searchParams.get("query");
+                  const userId = searchParams.get("userId");
+                  const filterParams = { q: query };
+                  if (userId !== "") filterParams.userId = userId;
+
+                  const posts = getPosts({
+                    signal,
+                    params: filterParams,
+                  });
+                  const users = getUsers({ signal });
+
+                  return {
+                    posts: await posts,
+                    users: await users,
+                    searchParams: { query, userId },
+                  };
                 },
               },
               {
                 path: ":postId",
-                element: <Post />,
-                loader: async ({ params: { postId }, request: { signal } }) => {
-                  const comments = getComments(postId, signal);
-                  const post = await getPost(postId, signal);
-                  const user = getUser(post.userId, signal);
 
-                  return { post, user: await user, comments: await comments };
+                children: [
+                  {
+                    index: true,
+                    element: <Post />,
+                    loader: async ({
+                      params: { postId },
+                      request: { signal },
+                    }) => {
+                      const comments = getComments(postId, signal);
+                      const post = await getPost(postId, signal);
+                      const user = getUser(post.userId, signal);
+
+                      return {
+                        post,
+                        user: await user,
+                        comments: await comments,
+                      };
+                    },
+                  },
+                  {
+                    path: "edit",
+                    element: <EditPost />,
+                    loader: async ({
+                      params: { postId },
+                      request: { signal },
+                    }) => {
+                      const post = getPost(postId, signal);
+                      const users = getUsers({ signal });
+
+                      return { post: await post, users: await users };
+                    },
+                    action: async ({ request, params: { postId } }) => {
+                      // we get submitted form data via below
+                      const formData = await request.formData();
+                      const title = formData.get("title");
+                      const body = formData.get("body");
+                      const userId = formData.get("userId");
+
+                      const errors = postFormValidator({ userId, title, body });
+
+                      if (Object.keys(errors).length) {
+                        return errors;
+                      }
+
+                      await updatePost(
+                        postId,
+                        {
+                          title,
+                          body,
+                          userId,
+                        },
+                        { signal: request.signal }
+                      );
+
+                      return redirect(`/posts/${postId}`);
+                    },
+                  },
+                ],
+              },
+              {
+                path: "new",
+                element: <NewPost />,
+                loader: ({ request: { signal } }) => {
+                  return getUsers({ signal });
+                },
+                action: async ({ request }) => {
+                  // we get submitted form data via below
+                  const formData = await request.formData();
+                  const title = formData.get("title");
+                  const body = formData.get("body");
+                  const userId = formData.get("userId");
+
+                  const errors = postFormValidator({ userId, title, body });
+
+                  if (Object.keys(errors).length) {
+                    return errors;
+                  }
+
+                  const post = await newPost(
+                    {
+                      title,
+                      body,
+                      userId,
+                    },
+                    { signal: request.signal }
+                  );
+
+                  return redirect(`/posts/${post.id}`);
                 },
               },
             ],
